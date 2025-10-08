@@ -1,0 +1,118 @@
+-- ==========================================
+-- BANCO DE DADOS: SISTEMA DE PEDIDOS - LOJA
+-- ==========================================
+
+-- ==========================================
+-- TABELA: CLIENTES
+-- ==========================================
+CREATE TABLE CLIENTES (
+    id_cliente INT PRIMARY KEY AUTO_INCREMENT,
+    nome VARCHAR(100) NOT NULL,
+    telefone VARCHAR(20),
+    email VARCHAR(100),
+    data_cadastro DATE NOT NULL,
+    CONSTRAINT uk_email_cliente UNIQUE (email)
+);
+
+-- ==========================================
+-- TABELA: PRODUTOS
+-- ==========================================
+CREATE TABLE PRODUTOS (
+    id_produto INT PRIMARY KEY AUTO_INCREMENT,
+    nome VARCHAR(100) NOT NULL,
+    descricao TEXT,
+    preco DECIMAL(10, 2) NOT NULL,
+    estoque INT NOT NULL DEFAULT 0,
+    CONSTRAINT chk_preco_positivo CHECK (preco >= 0),
+    CONSTRAINT chk_estoque_positivo CHECK (estoque >= 0)
+);
+
+-- ==========================================
+-- TABELA: PEDIDOS
+-- ==========================================
+CREATE TABLE PEDIDOS (
+    id_pedido INT PRIMARY KEY AUTO_INCREMENT,
+    id_cliente INT NOT NULL,
+    data_pedido DATE NOT NULL,
+    valor_total DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_pedido_cliente FOREIGN KEY (id_cliente) 
+        REFERENCES CLIENTES(id_cliente)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT chk_valor_total_positivo CHECK (valor_total >= 0)
+);
+
+-- ==========================================
+-- TABELA: PEDIDO_ITENS (Relacionamento N:N)
+-- ==========================================
+CREATE TABLE PEDIDO_ITENS (
+    id_pedido INT NOT NULL,
+    id_produto INT NOT NULL,
+    quantidade INT NOT NULL,
+    preco DECIMAL(10, 2) NOT NULL,
+    PRIMARY KEY (id_pedido, id_produto),
+    CONSTRAINT fk_item_pedido FOREIGN KEY (id_pedido) 
+        REFERENCES PEDIDOS(id_pedido)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_item_produto FOREIGN KEY (id_produto) 
+        REFERENCES PRODUTOS(id_produto)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT chk_quantidade_positiva CHECK (quantidade > 0),
+    CONSTRAINT chk_preco_item_positivo CHECK (preco >= 0)
+);
+
+-- ==========================================
+-- ÍNDICES PARA OTIMIZAÇÃO DE CONSULTAS
+-- ==========================================
+CREATE INDEX idx_pedido_data ON PEDIDOS(data_pedido);
+CREATE INDEX idx_pedido_cliente ON PEDIDOS(id_cliente);
+CREATE INDEX idx_produto_nome ON PRODUTOS(nome);
+CREATE INDEX idx_cliente_email ON CLIENTES(email);
+
+-- ==========================================
+-- TRIGGER: ATUALIZAR VALOR TOTAL DO PEDIDO
+-- ==========================================
+DELIMITER //
+
+CREATE TRIGGER trg_calcular_valor_pedido 
+AFTER INSERT ON PEDIDO_ITENS
+FOR EACH ROW
+BEGIN
+    UPDATE PEDIDOS 
+    SET valor_total = (
+        SELECT SUM(quantidade * preco) 
+        FROM PEDIDO_ITENS 
+        WHERE id_pedido = NEW.id_pedido
+    )
+    WHERE id_pedido = NEW.id_pedido;
+END//
+
+CREATE TRIGGER trg_atualizar_valor_pedido 
+AFTER UPDATE ON PEDIDO_ITENS
+FOR EACH ROW
+BEGIN
+    UPDATE PEDIDOS 
+    SET valor_total = (
+        SELECT SUM(quantidade * preco) 
+        FROM PEDIDO_ITENS 
+        WHERE id_pedido = NEW.id_pedido
+    )
+    WHERE id_pedido = NEW.id_pedido;
+END//
+
+CREATE TRIGGER trg_recalcular_valor_pedido 
+AFTER DELETE ON PEDIDO_ITENS
+FOR EACH ROW
+BEGIN
+    UPDATE PEDIDOS 
+    SET valor_total = COALESCE((
+        SELECT SUM(quantidade * preco) 
+        FROM PEDIDO_ITENS 
+        WHERE id_pedido = OLD.id_pedido
+    ), 0)
+    WHERE id_pedido = OLD.id_pedido;
+END//
+
+DELIMITER ;
